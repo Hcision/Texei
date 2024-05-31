@@ -1,0 +1,28 @@
+<template>
+    <lightning-card title="Weather Information" icon-name="utility:world">
+        <div class="slds-m-around_medium">
+            <template if:true={weatherData}>
+                <p><strong>Wind Speed: </strong>{windSpeed}</p>
+                <p><strong>Temperature: </strong>{temperature}</p>
+                <p><strong>Humidity: </strong>{humidity}</p>
+                <p style="margin-bottom: 20px;">
+                    <strong>Weather Conditions:</strong>
+                    <img src={cloudIcon} style="width: 30px; height: 30px; position: absolute; top: 96px; margin-left: 10px;" />
+                </p>
+            </template>
+            <template if:true={error}>
+                <p class="slds-text-color_error">{error}</p>
+            </template>
+                <p style="margin-bottom: 20px;"><strong>Last Report Sent:</strong> {lastReportSentFormatted}</p>
+            <div class="slds-text-align_right">
+                <lightning-button 
+                    label="Send Weather Report" 
+                    onclick={sendWeatherReport} 
+                    disabled={isSending}
+                    size="small"
+                    class="slds-m-top_medium"
+                ></lightning-button>
+            </div>
+        </div>
+    </lightning-card>
+</template>
