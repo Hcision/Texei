@@ -24,8 +24,6 @@ const USER_FIELDS = [
 ];
 
 const cloudIconMap = {
-
-    //This are just are samples of the png links only CAVOK is reel.
     'n/a': 'https://example.com/icons/na.png',
     'SKC': 'https://example.com/icons/clear_sky.png',
     'CLR': 'https://example.com/icons/clear_sky.png',
@@ -51,6 +49,7 @@ export default class WeatherComponent extends LightningElement {
     @track isAccountPage = false;
     @track isSending = false;
     @track lastReportSent;
+    @track remainingCapacity;
 
     // Fetch account fields if recordId is available
     @wire(getRecord, { recordId: '$recordId', fields: ACCOUNT_FIELDS })
@@ -167,9 +166,12 @@ export default class WeatherComponent extends LightningElement {
                 response = await sendWeatherReportApex({ weatherData: this.weatherData });
             }
             console.log('Email send response:', response);
-            if (response !== 'Success') {
-                this.showToast('Error', response, 'error');
+            if (response.status === 'LimitExceeded') {
+                this.showToast('Error', 'The number of sent emails has exceeded the limit. Please try again later.', 'error');
+            } else if (response.status !== 'Success') {
+                this.showToast('Error', response.status, 'error');
             } else {
+                this.remainingCapacity = response.remainingCapacity;
                 this.showToast('Success', 'Weather report sent successfully', 'success');
             }
         } catch (error) {

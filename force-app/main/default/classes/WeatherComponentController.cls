@@ -77,14 +77,15 @@ public with sharing class WeatherComponentController {
      * @return Status message indicating success or error.
      */
     @AuraEnabled
-    public static String sendWeatherReport(Id recordId, Map<String, String> weatherData) {
+    public static Map<String, Object> sendWeatherReport(Id recordId, Map<String, String> weatherData) {
         System.debug('sendWeatherReport called with recordId: ' + recordId);
         System.debug('Weather Data: ' + weatherData);
-
+    
+        Map<String, Object> resultMap = new Map<String, Object>();
         List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
         String userEmail = UserInfo.getUserEmail();
         List<String> emailAddresses = new List<String>();
-
+    
         if (recordId != null) {
             List<Contact> contacts = [
                 SELECT Email 
@@ -92,26 +93,26 @@ public with sharing class WeatherComponentController {
                 WHERE AccountId = :recordId AND Email != NULL
                 LIMIT 1000
             ];
-
+    
             for (Contact contact : contacts) {
                 emailAddresses.add(contact.Email);
             }
         } else {
             emailAddresses.add(userEmail);
         }
-
+    
         System.debug('Email Addresses: ' + emailAddresses);
-
+    
         if (emailAddresses.isEmpty()) {
             throw new AuraHandledException('No email addresses found to send the weather report.');
         }
-
+    
         String emailBody = 'Weather Report\n\n' +
                            'Temperature: ' + weatherData.get('temperature') + '\n' +
                            'Humidity: ' + weatherData.get('humidity') + '\n' +
                            'Wind Speed: ' + weatherData.get('windSpeed') + '\n' +
                            'Weather Conditions: ' + weatherData.get('weatherConditions');
-
+    
         for (String emailAddress : emailAddresses) {
             Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
             mail.setToAddresses(new String[] { emailAddress });
@@ -119,11 +120,29 @@ public with sharing class WeatherComponentController {
             mail.setPlainTextBody(emailBody);
             emails.add(mail);
         }
-
+    
         try {
+            Integer emailsToSend = emails.size();
+            
+            // Check org limits
+            Map<String, System.OrgLimit> limitsMap = OrgLimits.getMap();
+            System.OrgLimit singleEmailLimit = limitsMap.get('SingleEmail');
+            Integer currentUsage = singleEmailLimit.getValue();
+            Integer maxLimit = singleEmailLimit.getLimit();
+            Integer remainingCapacity = maxLimit - currentUsage;
+    
+            if (emailsToSend > remainingCapacity) {
+                resultMap.put('status', 'LimitExceeded');
+                resultMap.put('remainingCapacity', remainingCapacity);
+                return resultMap;
+            }
+    
+            Messaging.reserveSingleEmailCapacity(emailsToSend);
+    
             if (!emails.isEmpty()) {
                 Messaging.sendEmail(emails);
             }
+    
             // Update the Last sent field on the Account or User
             if (recordId != null) {
                 Account account = [SELECT Id, Last_Report_Sent__c FROM Account WHERE Id = :recordId LIMIT 1];
@@ -134,11 +153,20 @@ public with sharing class WeatherComponentController {
                 currentUser.Last_Report_Sent__c = System.now();
                 update currentUser;
             }
-
-            return 'Success';
+    
+            resultMap.put('status', 'Success');
+            resultMap.put('remainingCapacity', remainingCapacity - emailsToSend);
+            return resultMap;
+        } catch (System.HandledException e) {
+            if (e.getMessage().contains('The daily limit for the org would be exceeded by this request')) {
+                resultMap.put('status', 'LimitExceeded');
+            } else {
+                resultMap.put('status', 'Error: ' + e.getMessage());
+            }
         } catch (Exception e) {
             System.debug('Error sending email: ' + e.getMessage());
-            throw new AuraHandledException('Error sending email: ' + e.getMessage());
+            resultMap.put('status', 'Error: ' + e.getMessage());
         }
-    }
+        return resultMap;
+    }            
 }
